@@ -206,6 +206,21 @@ final class SleepManagerTests: XCTestCase {
         XCTAssertEqual(manager.banner?.title, "通知已关闭")
     }
 
+    func testRequestNotificationPermissionWithoutPromptShowsGuidanceBanner() {
+        let notificationPermission = NotificationPermissionHarness(status: .notDetermined)
+        notificationPermission.requestResult = .notDetermined
+        let manager = makeManager(
+            notificationPermission: notificationPermission,
+            startMonitoring: false
+        )
+
+        manager.requestNotificationPermission()
+
+        XCTAssertEqual(manager.notificationPermission, .notDetermined)
+        XCTAssertEqual(manager.banner?.level, .warning)
+        XCTAssertEqual(manager.banner?.title, "授权窗口没有出现")
+    }
+
     private func makeManager(
         controller: RecordingSleepAssertionController = RecordingSleepAssertionController(),
         batteryState: BatteryState = BatteryState(),
@@ -219,6 +234,7 @@ final class SleepManagerTests: XCTestCase {
         let environment = SleepManagerEnvironment(
             now: { clock.now },
             isRunningOnBattery: { batteryState.isOnBattery },
+            prepareForNotificationRequest: {},
             fetchNotificationPermission: { completion in
                 completion(notificationPermission.status)
             },

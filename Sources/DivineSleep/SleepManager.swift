@@ -153,6 +153,7 @@ protocol SleepAssertionControlling: AnyObject {
 struct SleepManagerEnvironment {
     let now: () -> Date
     let isRunningOnBattery: () -> Bool
+    let prepareForNotificationRequest: () -> Void
     let fetchNotificationPermission: (@escaping (NotificationPermissionState) -> Void) -> Void
     let requestNotificationPermission: (@escaping (NotificationPermissionState) -> Void) -> Void
     let postNotification: (_ title: String, _ body: String) -> Void
@@ -168,6 +169,9 @@ struct SleepManagerEnvironment {
                 }
 
                 return output.contains("Battery Power")
+            },
+            prepareForNotificationRequest: {
+                NSApp.activate(ignoringOtherApps: true)
             },
             fetchNotificationPermission: { completion in
                 UNUserNotificationCenter.current().getNotificationSettings { settings in
@@ -472,6 +476,8 @@ final class SleepManager: ObservableObject {
     }
 
     func requestNotificationPermission() {
+        environment.prepareForNotificationRequest()
+
         environment.requestNotificationPermission { [weak self] status in
             guard let self else { return }
             self.notificationPermission = status
@@ -489,7 +495,13 @@ final class SleepManager: ObservableObject {
                     title: "通知未开启",
                     detail: "请到系统设置 > 通知 > DivineSleep 中开启提醒，再点这里重新检测。"
                 )
-            case .notDetermined, .unknown:
+            case .notDetermined:
+                self.presentBanner(
+                    level: .warning,
+                    title: "授权窗口没有出现",
+                    detail: "这通常是因为当前运行的不是签名后的 .app，或系统没有把授权面板带到前台。请重新打开最新打包产物后再试。"
+                )
+            case .unknown:
                 self.presentBanner(
                     level: .info,
                     title: "通知状态未确认",

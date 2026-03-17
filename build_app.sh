@@ -26,4 +26,6 @@ mkdir -p "${APP_DIR}/Contents/MacOS"
 cp "${BINARY_PATH}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp "${INFO_PLIST_PATH}" "${APP_DIR}/Contents/Info.plist"
 
+codesign --force --deep --sign - "${APP_DIR}"
+
 echo "Built ${APP_DIR}"
