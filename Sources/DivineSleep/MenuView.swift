@@ -69,6 +69,13 @@ struct MenuView: View {
                     onSelect: sleepManager.updateTheme
                 )
 
+                NotificationSection(
+                    permission: sleepManager.notificationPermission,
+                    palette: palette,
+                    onRequest: { sleepManager.requestNotificationPermission() },
+                    onRefresh: { sleepManager.refreshNotificationPermission() }
+                )
+
                 FooterSection(palette: palette)
             }
             .padding(22)
@@ -429,6 +436,63 @@ private struct ThemeSection: View {
                 }
             }
         }
+    }
+}
+
+private struct NotificationSection: View {
+    let permission: NotificationPermissionState
+    let palette: MenuPalette
+    let onRequest: () -> Void
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionLabel(title: "提醒", palette: palette)
+
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: permission.symbolName)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(permission.accentColor)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(permission.accentColor.opacity(0.14))
+                    )
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(permission.title)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(palette.primaryText)
+
+                    Text(permission.detail)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(palette.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button(permission.primaryActionTitle) {
+                    if permission == .notDetermined {
+                        onRequest()
+                    } else {
+                        onRefresh()
+                    }
+                }
+                .buttonStyle(PillButtonStyle(fill: palette.controlFill, foreground: palette.primaryText))
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.border, lineWidth: 1)
+        )
     }
 }
 
@@ -807,6 +871,73 @@ private extension FeedbackLevel {
             return accentColor.opacity(palette == .dark ? 0.18 : 0.12)
         case .error:
             return accentColor.opacity(palette == .dark ? 0.18 : 0.12)
+        }
+    }
+}
+
+private extension NotificationPermissionState {
+    var title: String {
+        switch self {
+        case .authorized:
+            return "系统通知已开启"
+        case .notDetermined:
+            return "还没有通知授权"
+        case .denied:
+            return "系统通知已关闭"
+        case .unknown:
+            return "正在检测通知状态"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .authorized:
+            return "计时结束、恢复会话和执行睡眠操作时都会通过系统通知提醒你。"
+        case .notDetermined:
+            return "建议开启通知，这样倒计时结束时就不会只停留在菜单栏里。"
+        case .denied:
+            return "请到系统设置 > 通知 > DivineSleep 中开启提醒，然后回来点“重新检测”。"
+        case .unknown:
+            return "DivineSleep 正在读取当前通知权限，你也可以手动刷新一次。"
+        }
+    }
+
+    var primaryActionTitle: String {
+        switch self {
+        case .authorized:
+            return "刷新状态"
+        case .notDetermined:
+            return "启用通知"
+        case .denied:
+            return "重新检测"
+        case .unknown:
+            return "刷新状态"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .authorized:
+            return "bell.badge.fill"
+        case .notDetermined:
+            return "bell.circle"
+        case .denied:
+            return "bell.slash.fill"
+        case .unknown:
+            return "questionmark.circle"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .authorized:
+            return Color(red: 0.16, green: 0.65, blue: 0.44)
+        case .notDetermined:
+            return Color(red: 0.18, green: 0.52, blue: 0.94)
+        case .denied:
+            return Color(red: 0.91, green: 0.58, blue: 0.16)
+        case .unknown:
+            return Color(red: 0.43, green: 0.49, blue: 0.60)
         }
     }
 }

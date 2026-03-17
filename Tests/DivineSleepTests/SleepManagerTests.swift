@@ -171,10 +171,46 @@ final class SleepManagerTests: XCTestCase {
         XCTAssertEqual(manager.banner?.title, "立即睡眠失败")
     }
 
+    func testRequestNotificationPermissionUpdatesStateAndBanner() {
+        let notificationPermission = NotificationPermissionHarness(status: .notDetermined)
+        notificationPermission.requestResult = .authorized
+        let manager = makeManager(
+            notificationPermission: notificationPermission,
+            startMonitoring: false
+        )
+
+        XCTAssertEqual(manager.notificationPermission, .notDetermined)
+
+        manager.requestNotificationPermission()
+
+        XCTAssertEqual(manager.notificationPermission, .authorized)
+        XCTAssertEqual(manager.banner?.level, .success)
+        XCTAssertEqual(manager.banner?.title, "通知已启用")
+        XCTAssertEqual(notificationPermission.requestCount, 1)
+    }
+
+    func testDeniedNotificationPermissionShowsWarningInsteadOfPosting() {
+        let notifications = NotificationRecorder()
+        let notificationPermission = NotificationPermissionHarness(status: .denied)
+        let manager = makeManager(
+            notificationPermission: notificationPermission,
+            notifications: notifications,
+            startMonitoring: false
+        )
+
+        manager.startTimer(minutes: 1)
+        manager.advanceTimerForTesting(by: 60)
+
+        XCTAssertEqual(notifications.messages.count, 0)
+        XCTAssertEqual(manager.banner?.level, .warning)
+        XCTAssertEqual(manager.banner?.title, "通知已关闭")
+    }
+
     private func makeManager(
         controller: RecordingSleepAssertionController = RecordingSleepAssertionController(),
         batteryState: BatteryState = BatteryState(),
         clock: TestClock = TestClock(),
+        notificationPermission: NotificationPermissionHarness = NotificationPermissionHarness(),
         notifications: NotificationRecorder = NotificationRecorder(),
         sleeper: SleepActionRecorder = SleepActionRecorder(),
         startMonitoring: Bool,
@@ -183,7 +219,15 @@ final class SleepManagerTests: XCTestCase {
         let environment = SleepManagerEnvironment(
             now: { clock.now },
             isRunningOnBattery: { batteryState.isOnBattery },
-            displayNotification: { title, body in
+            fetchNotificationPermission: { completion in
+                completion(notificationPermission.status)
+            },
+            requestNotificationPermission: { completion in
+                notificationPermission.requestCount += 1
+                notificationPermission.status = notificationPermission.requestResult
+                completion(notificationPermission.status)
+            },
+            postNotification: { title, body in
                 notifications.messages.append((title: title, body: body))
             },
             sleepNow: {
@@ -219,6 +263,17 @@ private final class RecordingSleepAssertionController: SleepAssertionControlling
 
 private final class NotificationRecorder {
     var messages: [(title: String, body: String)] = []
+}
+
+private final class NotificationPermissionHarness {
+    var status: NotificationPermissionState
+    var requestResult: NotificationPermissionState
+    var requestCount = 0
+
+    init(status: NotificationPermissionState = .authorized) {
+        self.status = status
+        self.requestResult = status
+    }
 }
 
 private final class SleepActionRecorder {

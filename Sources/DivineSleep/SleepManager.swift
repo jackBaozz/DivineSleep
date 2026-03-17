@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import UserNotifications
 
 enum TimerMode: String, CaseIterable, Identifiable {
     case pomodoro
@@ -137,6 +138,13 @@ struct FeedbackBanner: Identifiable, Equatable {
     let detail: String
 }
 
+enum NotificationPermissionState: Equatable {
+    case unknown
+    case notDetermined
+    case authorized
+    case denied
+}
+
 protocol SleepAssertionControlling: AnyObject {
     func start() throws
     func stop()
@@ -145,7 +153,9 @@ protocol SleepAssertionControlling: AnyObject {
 struct SleepManagerEnvironment {
     let now: () -> Date
     let isRunningOnBattery: () -> Bool
-    let displayNotification: (_ title: String, _ body: String) -> Void
+    let fetchNotificationPermission: (@escaping (NotificationPermissionState) -> Void) -> Void
+    let requestNotificationPermission: (@escaping (NotificationPermissionState) -> Void) -> Void
+    let postNotification: (_ title: String, _ body: String) -> Void
     let sleepNow: () throws -> Void
     let sleepAssertionController: SleepAssertionControlling
 
@@ -159,12 +169,39 @@ struct SleepManagerEnvironment {
 
                 return output.contains("Battery Power")
             },
-            displayNotification: { title, body in
-                let script = "display notification \"\(escapeAppleScript(body))\" with title \"\(escapeAppleScript(title))\""
-                do {
-                    _ = try runCommand("/usr/bin/osascript", arguments: ["-e", script])
-                } catch {
-                    print("Failed to display notification: \(error)")
+            fetchNotificationPermission: { completion in
+                UNUserNotificationCenter.current().getNotificationSettings { settings in
+                    DispatchQueue.main.async {
+                        completion(mapNotificationPermission(settings.authorizationStatus))
+                    }
+                }
+            },
+            requestNotificationPermission: { completion in
+                let center = UNUserNotificationCenter.current()
+                center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+                    center.getNotificationSettings { settings in
+                        DispatchQueue.main.async {
+                            completion(mapNotificationPermission(settings.authorizationStatus))
+                        }
+                    }
+                }
+            },
+            postNotification: { title, body in
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body
+                content.sound = .default
+
+                let request = UNNotificationRequest(
+                    identifier: UUID().uuidString,
+                    content: content,
+                    trigger: nil
+                )
+
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let error {
+                        print("Failed to post notification: \(error)")
+                    }
                 }
             },
             sleepNow: {
@@ -256,6 +293,7 @@ final class SleepManager: ObservableObject {
     }
     @Published var statusMessage = "点选一个时长卡片就会立即开始。"
     @Published var banner: FeedbackBanner?
+    @Published var notificationPermission: NotificationPermissionState = .unknown
 
     let focusPresets = [1, 5, 15, 25, 45, 60].map(TimerPreset.init(minutes:))
     let sleepPresets = [10, 20, 30, 45, 60, 90].map(TimerPreset.init(minutes:))
@@ -331,6 +369,7 @@ final class SleepManager: ObservableObject {
             resetSelectionIfNeeded()
         }
         isRestoringState = false
+        refreshNotificationPermission()
 
         if startMonitoring {
             startPowerMonitor()
@@ -382,13 +421,13 @@ final class SleepManager: ObservableObject {
         clearActiveSession()
 
         if notify {
-            environment.displayNotification("DivineSleep", "当前倒计时已取消。")
+            sendNotification(title: "DivineSleep", body: "当前倒计时已取消。")
         }
     }
 
     func sleepNow(showNotification: Bool = true) {
         if showNotification {
-            environment.displayNotification("DivineSleep", "Mac 即将进入睡眠。")
+            sendNotification(title: "DivineSleep", body: "Mac 即将进入睡眠。")
         }
 
         do {
@@ -424,6 +463,40 @@ final class SleepManager: ObservableObject {
 
     func dismissBanner() {
         banner = nil
+    }
+
+    func refreshNotificationPermission() {
+        environment.fetchNotificationPermission { [weak self] status in
+            self?.notificationPermission = status
+        }
+    }
+
+    func requestNotificationPermission() {
+        environment.requestNotificationPermission { [weak self] status in
+            guard let self else { return }
+            self.notificationPermission = status
+
+            switch status {
+            case .authorized:
+                self.presentBanner(
+                    level: .success,
+                    title: "通知已启用",
+                    detail: "计时结束和系统操作结果会通过通知提醒你。"
+                )
+            case .denied:
+                self.presentBanner(
+                    level: .warning,
+                    title: "通知未开启",
+                    detail: "请到系统设置 > 通知 > DivineSleep 中开启提醒，再点这里重新检测。"
+                )
+            case .notDetermined, .unknown:
+                self.presentBanner(
+                    level: .info,
+                    title: "通知状态未确认",
+                    detail: "你可以稍后再次尝试授权，或手动在系统设置里检查。"
+                )
+            }
+        }
     }
 
     private func resetSelectionIfNeeded() {
@@ -470,10 +543,10 @@ final class SleepManager: ObservableObject {
         switch mode {
         case .pomodoro:
             statusMessage = "专注阶段结束，记得活动一下。"
-            environment.displayNotification("专注结束", "你的番茄时钟已经完成。")
+            sendNotification(title: "专注结束", body: "你的番茄时钟已经完成。")
         case .sleepTimer:
             statusMessage = "倒计时结束，准备进入睡眠。"
-            environment.displayNotification("睡眠倒计时结束", "DivineSleep 正在让 Mac 进入睡眠。")
+            sendNotification(title: "睡眠倒计时结束", body: "DivineSleep 正在让 Mac 进入睡眠。")
             sleepNow(showNotification: false)
         }
     }
@@ -577,6 +650,27 @@ final class SleepManager: ObservableObject {
         banner = nil
     }
 
+    private func sendNotification(title: String, body: String) {
+        switch notificationPermission {
+        case .authorized:
+            environment.postNotification(title, body)
+        case .notDetermined:
+            presentBanner(
+                level: .info,
+                title: "建议启用系统通知",
+                detail: "这样在计时结束或执行睡眠操作时，你能立即收到提醒。"
+            )
+        case .denied:
+            presentBanner(
+                level: .warning,
+                title: "通知已关闭",
+                detail: "请到系统设置 > 通知 > DivineSleep 中开启提醒，避免错过完成提示。"
+            )
+        case .unknown:
+            refreshNotificationPermission()
+        }
+    }
+
     private func restoredSelectedMinutes(for mode: TimerMode) -> Int {
         let savedMinutes = defaults.integer(forKey: storageKey(for: mode))
         let validMinutes = mode == .pomodoro ? focusPresets.map(\.minutes) : sleepPresets.map(\.minutes)
@@ -658,8 +752,15 @@ private func runCommand(_ launchPath: String, arguments: [String]) throws -> Str
     return output
 }
 
-private func escapeAppleScript(_ text: String) -> String {
-    text
-        .replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
+private func mapNotificationPermission(_ status: UNAuthorizationStatus) -> NotificationPermissionState {
+    switch status {
+    case .notDetermined:
+        return .notDetermined
+    case .denied:
+        return .denied
+    case .authorized, .provisional, .ephemeral:
+        return .authorized
+    @unknown default:
+        return .unknown
+    }
 }
