@@ -42,6 +42,12 @@ Release app bundle:
 ./build_app.sh
 ```
 
+The packaging script resolves paths from its own location, so it can also be invoked from another working directory, for example:
+
+```bash
+/path/to/DivineSleep/build_app.sh
+```
+
 Generated app:
 
 ```text
@@ -82,4 +88,3 @@ You can also refresh or request notification access from inside the app panel.
 - Wake prevention uses `caffeinate`
 - Sleep actions use `pmset`
 - The packaged app version is defined in [`Info.plist`](./Info.plist)
-
