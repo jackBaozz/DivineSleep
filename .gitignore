@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+/.build/
+/.swiftpm/
+
+# Xcode user-specific files
+DerivedData/
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Local editor settings
+/.vscode/
+
+# Packaged app bundles generated locally
+/*.app
