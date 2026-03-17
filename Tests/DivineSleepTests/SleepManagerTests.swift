@@ -110,6 +110,22 @@ final class SleepManagerTests: XCTestCase {
         XCTAssertEqual(sleeper.callCount, 1)
     }
 
+    func testTimerUsesAbsoluteEndDateAfterClockJump() {
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_000))
+        let manager = makeManager(
+            clock: clock,
+            startMonitoring: false
+        )
+
+        manager.startTimer(minutes: 1)
+        clock.now = clock.now.addingTimeInterval(45)
+        manager.refreshTimerStateForTesting()
+
+        XCTAssertEqual(manager.remainingSeconds, 15)
+        XCTAssertEqual(manager.timerProgress, 0.75, accuracy: 0.001)
+        XCTAssertTrue(manager.isTimerRunning)
+    }
+
     func testRestoresActiveTimerAfterRelaunch() {
         let clock = TestClock(now: Date(timeIntervalSince1970: 10_000))
         let initialManager = makeManager(

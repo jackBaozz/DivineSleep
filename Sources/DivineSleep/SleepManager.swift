@@ -310,6 +310,9 @@ final class SleepManager: ObservableObject {
     private var timer: Timer?
     private var powerMonitorTimer: Timer?
     private var activeTimerTotalSeconds = 0
+    private var targetEndDate: Date?
+    private var timerActivity: NSObjectProtocol?
+    private var sleepPreventionRequestID = 0
 
     var presetItems: [TimerPreset] {
         switch mode {
@@ -383,6 +386,7 @@ final class SleepManager: ObservableObject {
     deinit {
         timer?.invalidate()
         powerMonitorTimer?.invalidate()
+        endTimerActivityIfNeeded()
         environment.sleepAssertionController.stop()
     }
 
@@ -406,11 +410,13 @@ final class SleepManager: ObservableObject {
     func startTimer(minutes: Int) {
         selectedMinutes = minutes
         activeTimerTotalSeconds = minutes * 60
-        remainingSeconds = activeTimerTotalSeconds
+        targetEndDate = environment.now().addingTimeInterval(Double(activeTimerTotalSeconds))
+        remainingSeconds = remainingSecondsUntilTargetEndDate()
         isTimerRunning = true
         statusMessage = "正在进行\(mode.title)。"
         clearNonCriticalBanner()
 
+        beginTimerActivityIfNeeded()
         scheduleTimerIfNeeded()
         persistActiveSession()
     }
@@ -419,10 +425,12 @@ final class SleepManager: ObservableObject {
         timer?.invalidate()
         timer = nil
         activeTimerTotalSeconds = 0
+        targetEndDate = nil
         isTimerRunning = false
         remainingSeconds = 0
         statusMessage = "计时已取消。"
         clearActiveSession()
+        endTimerActivityIfNeeded()
 
         if notify {
             sendNotification(title: "DivineSleep", body: "当前倒计时已取消。")
@@ -448,9 +456,7 @@ final class SleepManager: ObservableObject {
     }
 
     func formattedRemainingTime() -> String {
-        let minutes = remainingSeconds / 60
-        let seconds = remainingSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        SleepManager.timerFormatter.string(from: TimeInterval(max(0, remainingSeconds))) ?? "00:00"
     }
 
     func isSelected(_ preset: TimerPreset) -> Bool {
@@ -460,9 +466,14 @@ final class SleepManager: ObservableObject {
     func advanceTimerForTesting(by seconds: Int = 1) {
         guard seconds > 0 else { return }
 
-        for _ in 0..<seconds {
-            tick()
-        }
+        guard let targetEndDate else { return }
+
+        self.targetEndDate = targetEndDate.addingTimeInterval(-TimeInterval(seconds))
+        syncRemainingTimeWithCurrentDate()
+    }
+
+    func refreshTimerStateForTesting() {
+        syncRemainingTimeWithCurrentDate()
     }
 
     func dismissBanner() {
@@ -520,16 +531,7 @@ final class SleepManager: ObservableObject {
     }
 
     private func tick() {
-        guard remainingSeconds > 0 else {
-            timerFinished()
-            return
-        }
-
-        remainingSeconds -= 1
-
-        if remainingSeconds == 0 {
-            timerFinished()
-        }
+        syncRemainingTimeWithCurrentDate()
     }
 
     private func scheduleTimerIfNeeded() {
@@ -549,8 +551,11 @@ final class SleepManager: ObservableObject {
         timer?.invalidate()
         timer = nil
         activeTimerTotalSeconds = 0
+        targetEndDate = nil
         isTimerRunning = false
+        remainingSeconds = 0
         clearActiveSession()
+        endTimerActivityIfNeeded()
 
         switch mode {
         case .pomodoro:
@@ -574,7 +579,32 @@ final class SleepManager: ObservableObject {
     private func updateSleepPrevention() {
         guard startMonitoring else { return }
 
-        let shouldPreventSleep = powerNeverSleep || (batteryNeverSleep && environment.isRunningOnBattery())
+        sleepPreventionRequestID += 1
+        let requestID = sleepPreventionRequestID
+
+        if powerNeverSleep {
+            applySleepPrevention(shouldPreventSleep: true)
+            return
+        }
+
+        guard batteryNeverSleep else {
+            applySleepPrevention(shouldPreventSleep: false)
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let isRunningOnBattery = self.environment.isRunningOnBattery()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.sleepPreventionRequestID == requestID else { return }
+                self.applySleepPrevention(shouldPreventSleep: isRunningOnBattery)
+            }
+        }
+    }
+
+    private func applySleepPrevention(shouldPreventSleep: Bool) {
+        guard startMonitoring else { return }
 
         if shouldPreventSleep {
             do {
@@ -626,6 +656,7 @@ final class SleepManager: ObservableObject {
 
         mode = storedMode
         activeTimerTotalSeconds = totalSeconds
+        targetEndDate = endDate
         remainingSeconds = remaining
         isTimerRunning = true
         self.selectedMinutes = selectedMinutes
@@ -635,13 +666,14 @@ final class SleepManager: ObservableObject {
             title: "已恢复上次计时",
             detail: "继续之前未完成的\(storedMode.title)，你可以直接继续或取消。"
         )
+        beginTimerActivityIfNeeded()
         scheduleTimerIfNeeded()
         return true
     }
 
     private func persistActiveSession() {
         defaults.set(mode.rawValue, forKey: StorageKey.activeSessionMode)
-        defaults.set(environment.now().addingTimeInterval(Double(remainingSeconds)).timeIntervalSince1970, forKey: StorageKey.activeSessionEndTime)
+        defaults.set((targetEndDate ?? environment.now().addingTimeInterval(Double(remainingSeconds))).timeIntervalSince1970, forKey: StorageKey.activeSessionEndTime)
         defaults.set(activeTimerTotalSeconds, forKey: StorageKey.activeSessionTotalSeconds)
         defaults.set(selectedMinutes, forKey: StorageKey.activeSessionSelectedMinutes)
     }
@@ -651,6 +683,22 @@ final class SleepManager: ObservableObject {
         defaults.removeObject(forKey: StorageKey.activeSessionEndTime)
         defaults.removeObject(forKey: StorageKey.activeSessionTotalSeconds)
         defaults.removeObject(forKey: StorageKey.activeSessionSelectedMinutes)
+    }
+
+    private func syncRemainingTimeWithCurrentDate() {
+        guard isTimerRunning else { return }
+
+        let remaining = remainingSecondsUntilTargetEndDate()
+        remainingSeconds = remaining
+
+        if remaining <= 0 {
+            timerFinished()
+        }
+    }
+
+    private func remainingSecondsUntilTargetEndDate() -> Int {
+        guard let targetEndDate else { return 0 }
+        return max(0, Int(ceil(targetEndDate.timeIntervalSince(environment.now()))))
     }
 
     private func presentBanner(level: FeedbackLevel, title: String, detail: String) {
@@ -681,6 +729,22 @@ final class SleepManager: ObservableObject {
         case .unknown:
             refreshNotificationPermission()
         }
+    }
+
+    private func beginTimerActivityIfNeeded() {
+        guard timerActivity == nil else { return }
+
+        timerActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "DivineSleep timer running"
+        )
+    }
+
+    private func endTimerActivityIfNeeded() {
+        guard let timerActivity else { return }
+
+        ProcessInfo.processInfo.endActivity(timerActivity)
+        self.timerActivity = nil
     }
 
     private func restoredSelectedMinutes(for mode: TimerMode) -> Int {
@@ -732,6 +796,14 @@ final class SleepManager: ObservableObject {
 
         return restoredTheme
     }
+
+    private static let timerFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = [.pad]
+        formatter.allowedUnits = [.hour, .minute, .second]
+        return formatter
+    }()
 }
 
 @discardableResult

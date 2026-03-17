@@ -18,6 +18,19 @@ struct MenuView: View {
             VStack(spacing: 18) {
                 HeaderSection(palette: palette, versionText: AppMetadata.versionDisplay)
 
+                ThemeSection(
+                    selectedTheme: sleepManager.theme,
+                    palette: palette,
+                    onSelect: sleepManager.updateTheme
+                )
+
+                SleepControlSection(
+                    batteryNeverSleep: $sleepManager.batteryNeverSleep,
+                    powerNeverSleep: $sleepManager.powerNeverSleep,
+                    palette: palette,
+                    onSleepNow: { sleepManager.sleepNow() }
+                )
+
                 if let banner = sleepManager.banner {
                     FeedbackBannerView(
                         banner: banner,
@@ -46,7 +59,7 @@ struct MenuView: View {
                 )
 
                 PresetGridSection(
-                    title: sleepManager.mode == .pomodoro ? "选择专注时长" : "选择睡眠倒计时",
+                    title: sleepManager.mode == .pomodoro ? "选择番茄工作法时长" : "选择睡眠倒计时时长",
                     presets: sleepManager.presetItems,
                     selectedMinutes: sleepManager.selectedMinutes,
                     isTimerRunning: sleepManager.isTimerRunning,
@@ -54,19 +67,6 @@ struct MenuView: View {
                     palette: palette,
                     columns: columns,
                     onSelect: { sleepManager.startTimer(minutes: $0) }
-                )
-
-                SleepControlSection(
-                    batteryNeverSleep: $sleepManager.batteryNeverSleep,
-                    powerNeverSleep: $sleepManager.powerNeverSleep,
-                    palette: palette,
-                    onSleepNow: { sleepManager.sleepNow() }
-                )
-
-                ThemeSection(
-                    selectedTheme: sleepManager.theme,
-                    palette: palette,
-                    onSelect: sleepManager.updateTheme
                 )
 
                 NotificationSection(
