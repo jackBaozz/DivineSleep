@@ -10,6 +10,7 @@ DivineSleep is a lightweight macOS menu bar utility for focus sessions, sleep co
 - Preset duration cards for quick start
 - Battery-mode and power-mode wake prevention
 - Immediate sleep action from the panel or menu bar menu
+- Fast display sleep within 10 seconds of locking the screen while wake prevention is active
 - Light, dark, and system theme support
 - Session restore after relaunch if a timer was still running
 - In-app notification permission status and request flow
@@ -86,5 +87,5 @@ You can also refresh or request notification access from inside the app panel.
 ## Notes
 
 - Wake prevention uses `caffeinate`
-- Sleep actions use `pmset`
+- Sleep actions and fast display sleep use `pmset`
 - The packaged app version is defined in [`Info.plist`](./Info.plist)

@@ -158,6 +158,7 @@ struct SleepManagerEnvironment {
     let requestNotificationPermission: (@escaping (NotificationPermissionState) -> Void) -> Void
     let postNotification: (_ title: String, _ body: String) -> Void
     let sleepNow: () throws -> Void
+    let turnOffDisplay: () throws -> Void
     let sleepAssertionController: SleepAssertionControlling
 
     static func live() -> SleepManagerEnvironment {
@@ -211,6 +212,9 @@ struct SleepManagerEnvironment {
             sleepNow: {
                 _ = try runCommand("/usr/bin/pmset", arguments: ["sleepnow"])
             },
+            turnOffDisplay: {
+                _ = try runCommand("/usr/bin/pmset", arguments: ["displaysleepnow"])
+            },
             sleepAssertionController: CaffeinateSleepAssertionController()
         )
     }
@@ -224,7 +228,7 @@ private final class CaffeinateSleepAssertionController: SleepAssertionControllin
 
         let nextProcess = Process()
         nextProcess.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-        nextProcess.arguments = ["-dimsu"]
+        nextProcess.arguments = ["-ims"]
         nextProcess.standardOutput = Pipe()
         nextProcess.standardError = Pipe()
 
@@ -313,6 +317,9 @@ final class SleepManager: ObservableObject {
     private var targetEndDate: Date?
     private var timerActivity: NSObjectProtocol?
     private var sleepPreventionRequestID = 0
+    private var screenLockObserver: NSObjectProtocol?
+    private var screenUnlockObserver: NSObjectProtocol?
+    private var displaySleepWorkItem: DispatchWorkItem?
 
     var presetItems: [TimerPreset] {
         switch mode {
@@ -380,6 +387,7 @@ final class SleepManager: ObservableObject {
 
         if startMonitoring {
             startPowerMonitor()
+            setupScreenLockObservers()
         }
     }
 
@@ -388,6 +396,14 @@ final class SleepManager: ObservableObject {
         powerMonitorTimer?.invalidate()
         endTimerActivityIfNeeded()
         environment.sleepAssertionController.stop()
+        
+        if let screenLockObserver {
+            DistributedNotificationCenter.default().removeObserver(screenLockObserver)
+        }
+        if let screenUnlockObserver {
+            DistributedNotificationCenter.default().removeObserver(screenUnlockObserver)
+        }
+        displaySleepWorkItem?.cancel()
     }
 
     func updateMode(_ newMode: TimerMode) {
@@ -601,6 +617,47 @@ final class SleepManager: ObservableObject {
                 self.applySleepPrevention(shouldPreventSleep: isRunningOnBattery)
             }
         }
+    }
+
+    private func setupScreenLockObservers() {
+        screenLockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleScreenLocked()
+        }
+
+        screenUnlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleScreenUnlocked()
+        }
+    }
+
+    private func handleScreenLocked() {
+        guard isSleepPreventionEnabled else { return }
+
+        displaySleepWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isSleepPreventionEnabled else { return }
+            do {
+                try self.environment.turnOffDisplay()
+            } catch {
+                print("Failed to turn off display: \(error)")
+            }
+        }
+        
+        displaySleepWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: workItem)
+    }
+
+    private func handleScreenUnlocked() {
+        displaySleepWorkItem?.cancel()
+        displaySleepWorkItem = nil
     }
 
     private func applySleepPrevention(shouldPreventSleep: Bool) {

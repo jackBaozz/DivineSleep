@@ -268,6 +268,7 @@ final class SleepManagerTests: XCTestCase {
                     throw error
                 }
             },
+            turnOffDisplay: {},
             sleepAssertionController: controller
         )
 
