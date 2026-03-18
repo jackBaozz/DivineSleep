@@ -43,6 +43,12 @@ Release app bundle:
 ./build_app.sh
 ```
 
+Release DMG:
+
+```bash
+./build_dmg.sh
+```
+
 The packaging script resolves paths from its own location, so it can also be invoked from another working directory, for example:
 
 ```bash
@@ -53,6 +59,12 @@ Generated app:
 
 ```text
 .build/release-app/DivineSleep.app
+```
+
+Generated DMG:
+
+```text
+DivineSleep-<CFBundleShortVersionString>-macos-<arch>.dmg
 ```
 
 ## Test

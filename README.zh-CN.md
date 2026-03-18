@@ -43,6 +43,12 @@ swift build
 ./build_app.sh
 ```
 
+生成 release `.dmg`：
+
+```bash
+./build_dmg.sh
+```
+
 这个打包脚本会基于脚本自身位置定位项目根目录，所以即使你当前不在仓库目录里，也可以这样调用：
 
 ```bash
@@ -53,6 +59,12 @@ swift build
 
 ```text
 .build/release-app/DivineSleep.app
+```
+
+生成的 DMG 文件名：
+
+```text
+DivineSleep-<CFBundleShortVersionString>-macos-<arch>.dmg
 ```
 
 ## 测试
