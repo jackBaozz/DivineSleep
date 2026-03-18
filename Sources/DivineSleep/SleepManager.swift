@@ -598,23 +598,19 @@ final class SleepManager: ObservableObject {
         sleepPreventionRequestID += 1
         let requestID = sleepPreventionRequestID
 
-        if powerNeverSleep {
-            applySleepPrevention(shouldPreventSleep: true)
-            return
-        }
-
-        guard batteryNeverSleep else {
+        guard batteryNeverSleep || powerNeverSleep else {
             applySleepPrevention(shouldPreventSleep: false)
             return
         }
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            let isRunningOnBattery = self.environment.isRunningOnBattery()
+            let isOnBattery = self.environment.isRunningOnBattery()
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.sleepPreventionRequestID == requestID else { return }
-                self.applySleepPrevention(shouldPreventSleep: isRunningOnBattery)
+                let shouldPrevent = isOnBattery ? self.batteryNeverSleep : self.powerNeverSleep
+                self.applySleepPrevention(shouldPreventSleep: shouldPrevent)
             }
         }
     }
@@ -638,21 +634,19 @@ final class SleepManager: ObservableObject {
     }
 
     private func handleScreenLocked() {
-        guard isSleepPreventionEnabled else { return }
-
         displaySleepWorkItem?.cancel()
-        
+
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.isSleepPreventionEnabled else { return }
+            guard let self = self else { return }
             do {
                 try self.environment.turnOffDisplay()
             } catch {
                 print("Failed to turn off display: \(error)")
             }
         }
-        
+
         displaySleepWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: workItem)
     }
 
     private func handleScreenUnlocked() {
