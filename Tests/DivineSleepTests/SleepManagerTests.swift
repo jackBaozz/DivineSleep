@@ -61,9 +61,19 @@ final class SleepManagerTests: XCTestCase {
         let initialStopCount = controller.stopCount
 
         manager.powerNeverSleep = true
+        let exp1 = expectation(description: "start assertion")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            exp1.fulfill()
+        }
+        wait(for: [exp1], timeout: 1.0)
         XCTAssertEqual(controller.startCount, 1)
 
         manager.powerNeverSleep = false
+        let exp2 = expectation(description: "stop assertion")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            exp2.fulfill()
+        }
+        wait(for: [exp2], timeout: 1.0)
         XCTAssertEqual(controller.stopCount, initialStopCount + 1)
     }
 
@@ -86,8 +96,8 @@ final class SleepManagerTests: XCTestCase {
         manager.advanceTimerForTesting(by: 30)
 
         XCTAssertFalse(manager.isTimerRunning)
-        XCTAssertEqual(manager.statusMessage, "专注阶段结束，记得活动一下。")
-        XCTAssertEqual(notifications.messages.map(\.title), ["专注结束"])
+        XCTAssertEqual(manager.statusMessage, L10n.statusMessagePomodoroDone)
+        XCTAssertEqual(notifications.messages.map(\.title), [L10n.notifTitlePomodoroDone])
         XCTAssertEqual(sleeper.callCount, 0)
     }
 
@@ -105,8 +115,8 @@ final class SleepManagerTests: XCTestCase {
         manager.advanceTimerForTesting(by: 60)
 
         XCTAssertFalse(manager.isTimerRunning)
-        XCTAssertEqual(manager.statusMessage, "倒计时结束，准备进入睡眠。")
-        XCTAssertEqual(notifications.messages.map(\.title), ["睡眠倒计时结束"])
+        XCTAssertEqual(manager.statusMessage, L10n.statusMessageSleepTimerDone)
+        XCTAssertEqual(notifications.messages.map(\.title), [L10n.notifTitleSleepTimerDone])
         XCTAssertEqual(sleeper.callCount, 1)
     }
 
@@ -146,9 +156,9 @@ final class SleepManagerTests: XCTestCase {
         XCTAssertEqual(restoredManager.selectedMinutes, 25)
         XCTAssertEqual(restoredManager.remainingSeconds, 1_200)
         XCTAssertEqual(restoredManager.timerProgress, 0.2, accuracy: 0.001)
-        XCTAssertEqual(restoredManager.statusMessage, "已恢复上次未完成的番茄时钟。")
+        XCTAssertEqual(restoredManager.statusMessage, L10n.statusMessageSessionRestored(mode: TimerMode.pomodoro.title))
         XCTAssertEqual(restoredManager.banner?.level, .info)
-        XCTAssertEqual(restoredManager.banner?.title, "已恢复上次计时")
+        XCTAssertEqual(restoredManager.banner?.title, L10n.bannerSessionRestoredTitle)
     }
 
     func testExpiredSessionShowsWarningBanner() {
@@ -167,9 +177,9 @@ final class SleepManagerTests: XCTestCase {
         )
 
         XCTAssertFalse(restoredManager.isTimerRunning)
-        XCTAssertEqual(restoredManager.statusMessage, "上次未完成的计时已过期。")
+        XCTAssertEqual(restoredManager.statusMessage, L10n.statusMessageSessionExpired)
         XCTAssertEqual(restoredManager.banner?.level, .warning)
-        XCTAssertEqual(restoredManager.banner?.title, "上次计时未恢复")
+        XCTAssertEqual(restoredManager.banner?.title, L10n.bannerSessionExpiredTitle)
     }
 
     func testSleepFailurePublishesErrorBanner() {
@@ -182,9 +192,9 @@ final class SleepManagerTests: XCTestCase {
 
         manager.sleepNow()
 
-        XCTAssertEqual(manager.statusMessage, "无法让系统进入睡眠，请检查权限。")
+        XCTAssertEqual(manager.statusMessage, L10n.statusMessageSleepFailed)
         XCTAssertEqual(manager.banner?.level, .error)
-        XCTAssertEqual(manager.banner?.title, "立即睡眠失败")
+        XCTAssertEqual(manager.banner?.title, L10n.bannerSleepFailedTitle)
     }
 
     func testRequestNotificationPermissionUpdatesStateAndBanner() {
@@ -201,7 +211,7 @@ final class SleepManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.notificationPermission, .authorized)
         XCTAssertEqual(manager.banner?.level, .success)
-        XCTAssertEqual(manager.banner?.title, "通知已启用")
+        XCTAssertEqual(manager.banner?.title, L10n.bannerPermissionEnabledTitle)
         XCTAssertEqual(notificationPermission.requestCount, 1)
     }
 
@@ -219,7 +229,7 @@ final class SleepManagerTests: XCTestCase {
 
         XCTAssertEqual(notifications.messages.count, 0)
         XCTAssertEqual(manager.banner?.level, .warning)
-        XCTAssertEqual(manager.banner?.title, "通知已关闭")
+        XCTAssertEqual(manager.banner?.title, L10n.bannerDisabledWarningTitle)
     }
 
     func testRequestNotificationPermissionWithoutPromptShowsGuidanceBanner() {
@@ -234,7 +244,7 @@ final class SleepManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.notificationPermission, .notDetermined)
         XCTAssertEqual(manager.banner?.level, .warning)
-        XCTAssertEqual(manager.banner?.title, "授权窗口没有出现")
+        XCTAssertEqual(manager.banner?.title, L10n.bannerPermissionNoPromptTitle)
     }
 
     private func makeManager(

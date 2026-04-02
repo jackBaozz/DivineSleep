@@ -3,10 +3,12 @@ import SwiftUI
 struct MenuView: View {
     @ObservedObject var sleepManager: SleepManager
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var languageManager = LanguageManager.shared
 
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10)
     ]
 
     private var palette: MenuPalette {
@@ -15,13 +17,19 @@ struct MenuView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 12) {
                 HeaderSection(palette: palette, versionText: AppMetadata.versionDisplay)
 
                 ThemeSection(
                     selectedTheme: sleepManager.theme,
                     palette: palette,
                     onSelect: sleepManager.updateTheme
+                )
+
+                LanguageSection(
+                    selectedLanguage: languageManager.current,
+                    palette: palette,
+                    onSelect: { languageManager.update($0) }
                 )
 
                 SleepControlSection(
@@ -59,7 +67,7 @@ struct MenuView: View {
                 )
 
                 PresetGridSection(
-                    title: sleepManager.mode == .pomodoro ? "选择番茄工作法时长" : "选择睡眠倒计时时长",
+                    title: sleepManager.mode == .pomodoro ? L10n.presetGridPomodoroTitle : L10n.presetGridSleepTimerTitle,
                     presets: sleepManager.presetItems,
                     selectedMinutes: sleepManager.selectedMinutes,
                     isTimerRunning: sleepManager.isTimerRunning,
@@ -78,7 +86,8 @@ struct MenuView: View {
 
                 FooterSection(palette: palette)
             }
-            .padding(22)
+            .padding(16)
+            .id(languageManager.current.rawValue)
         }
         .frame(width: 430, height: 700)
         .background(palette.background)
@@ -100,16 +109,10 @@ private struct HeaderSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("DivineSleep")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(palette.primaryText)
-
-                    Text("更适合放在菜单栏里的专注与睡眠控制器")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundColor(palette.secondaryText)
-                }
+            HStack(alignment: .center) {
+                Text(L10n.appTitle)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundColor(palette.primaryText)
 
                 Spacer()
 
@@ -137,7 +140,7 @@ private struct ModeSelectorSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(title: "工作模式", palette: palette)
+            SectionLabel(title: L10n.modeSelectorSectionTitle, palette: palette)
 
             HStack(spacing: 10) {
                 ForEach(TimerMode.allCases) { mode in
@@ -162,6 +165,7 @@ private struct ModeSelectorSection: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .pointingCursor()
                 }
             }
         }
@@ -196,7 +200,7 @@ private struct HeroSection: View {
 
                 Spacer()
 
-                Text(isTimerRunning ? "进行中" : "待开始")
+                Text(isTimerRunning ? L10n.timerStatusRunning : L10n.timerStatusWaiting)
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(isTimerRunning ? .white : palette.secondaryText)
                     .padding(.horizontal, 12)
@@ -214,7 +218,7 @@ private struct HeroSection: View {
                         .foregroundColor(palette.primaryText)
                         .monospacedDigit()
 
-                    Text(isTimerRunning ? "剩余时间" : "当前选中时长")
+                    Text(isTimerRunning ? L10n.remainingTimeLabel : L10n.selectedDurationLabel)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(palette.secondaryText)
                 }
@@ -222,7 +226,7 @@ private struct HeroSection: View {
                 Spacer()
 
                 if isTimerRunning {
-                    Button("取消") {
+                    Button(L10n.cancelButtonTitle) {
                         onCancel()
                     }
                     .buttonStyle(PillButtonStyle(fill: palette.controlFill, foreground: palette.primaryText))
@@ -232,7 +236,7 @@ private struct HeroSection: View {
             if isTimerRunning {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("进度")
+                        Text(L10n.progressLabel)
                             .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundColor(palette.secondaryText)
 
@@ -250,14 +254,14 @@ private struct HeroSection: View {
 
             HStack(spacing: 10) {
                 StatusChip(
-                    title: "已选时长",
+                    title: L10n.statusChipDuration,
                     value: selectedDuration,
                     tint: mode.accentColor.opacity(0.14),
                     foreground: palette.primaryText
                 )
 
                 StatusChip(
-                    title: isSleepProtectionEnabled ? "防睡眠已开" : "防睡眠",
+                    title: isSleepProtectionEnabled ? L10n.statusChipPreventionOn : L10n.statusChipPrevention,
                     value: preventionSummary,
                     tint: isSleepProtectionEnabled ? Color.teal.opacity(0.16) : palette.controlFill,
                     foreground: palette.primaryText
@@ -291,7 +295,7 @@ private struct PresetGridSection: View {
             HStack {
                 SectionLabel(title: title, palette: palette)
                 Spacer()
-                Text("点击卡片立即开始")
+                Text(L10n.clickToStartHint)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(palette.secondaryText)
             }
@@ -322,40 +326,36 @@ private struct PresetCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(isRunning ? "倒计时中" : preset.detailText)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(isSelected ? mode.accentColor : palette.secondaryText)
-
-                Spacer(minLength: 0)
-
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .center, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(preset.valueText)
-                        .font(.system(size: 36, weight: .heavy, design: .rounded))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
                         .foregroundColor(palette.primaryText)
 
                     Text(preset.unitText)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(palette.secondaryText)
                 }
-
-                Text(mode.subtitle)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(palette.secondaryText)
-                    .lineLimit(2)
+                
+                if isRunning {
+                    Circle()
+                        .fill(mode.accentColor)
+                        .frame(width: 4, height: 4)
+                        .padding(.top, 4)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 138, alignment: .leading)
-            .padding(18)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .center)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(isSelected ? AnyShapeStyle(mode.surfaceColor(for: palette)) : AnyShapeStyle(palette.surface))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(isSelected ? mode.accentColor : palette.border, lineWidth: isSelected ? 2 : 1)
             )
         }
         .buttonStyle(.plain)
+        .pointingCursor()
     }
 }
 
@@ -367,11 +367,11 @@ private struct SleepControlSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(title: "睡眠控制", palette: palette)
+            SectionLabel(title: L10n.sleepControlSectionTitle, palette: palette)
 
             SettingTile(
-                title: "电池模式下禁止睡眠",
-                subtitle: "仅在电池供电时保持唤醒，适合短时离开。",
+                title: L10n.batteryNeverSleepTitle,
+                subtitle: L10n.batteryNeverSleepSubtitle,
                 icon: "battery.100.bolt",
                 accent: .orange,
                 isOn: $batteryNeverSleep,
@@ -379,8 +379,8 @@ private struct SleepControlSection: View {
             )
 
             SettingTile(
-                title: "电源模式下禁止睡眠",
-                subtitle: "接电源时持续保持唤醒，适合下载和长任务。",
+                title: L10n.powerNeverSleepTitle,
+                subtitle: L10n.powerNeverSleepSubtitle,
                 icon: "powerplug.fill",
                 accent: .teal,
                 isOn: $powerNeverSleep,
@@ -390,7 +390,7 @@ private struct SleepControlSection: View {
             Button(action: onSleepNow) {
                 HStack {
                     Image(systemName: "moon.stars.fill")
-                    Text("立即睡眠")
+                    Text(L10n.sleepNowButtonTitle)
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                 }
                 .frame(maxWidth: .infinity)
@@ -408,7 +408,7 @@ private struct ThemeSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(title: "主题", palette: palette)
+            SectionLabel(title: L10n.themeSectionTitle, palette: palette)
 
             HStack(spacing: 10) {
                 ForEach(AppTheme.allCases) { theme in
@@ -433,6 +433,43 @@ private struct ThemeSection: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .pointingCursor()
+                }
+            }
+        }
+    }
+}
+
+private struct LanguageSection: View {
+    let selectedLanguage: AppLanguage
+    let palette: MenuPalette
+    let onSelect: (AppLanguage) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionLabel(title: L10n.languageSectionTitle, palette: palette)
+
+            HStack(spacing: 10) {
+                ForEach(AppLanguage.allCases) { language in
+                    Button {
+                        onSelect(language)
+                    } label: {
+                        Text(language.displayName)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .foregroundColor(selectedLanguage == language ? .white : palette.primaryText)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(selectedLanguage == language ? AnyShapeStyle(AppTheme.system.accentGradient) : AnyShapeStyle(palette.controlFill))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(selectedLanguage == language ? Color.white.opacity(0.18) : palette.border, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .pointingCursor()
                 }
             }
         }
@@ -447,7 +484,7 @@ private struct NotificationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(title: "提醒", palette: palette)
+            SectionLabel(title: L10n.notificationSectionTitle, palette: palette)
 
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: permission.symbolName)
@@ -505,13 +542,9 @@ private struct FooterSection: View {
                 .overlay(palette.divider)
 
             HStack {
-                Text("点击菜单栏图标可随时呼出控制面板")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(palette.secondaryText)
-
                 Spacer()
 
-                Button("退出") {
+                Button(L10n.footerQuit) {
                     NSApplication.shared.terminate(nil)
                 }
                 .buttonStyle(PillButtonStyle(fill: palette.controlFill, foreground: palette.primaryText))
@@ -598,6 +631,7 @@ private struct FeedbackBannerView: View {
                     )
             }
             .buttonStyle(.plain)
+            .pointingCursor()
         }
         .padding(16)
         .background(
@@ -646,6 +680,7 @@ private struct SettingTile: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .pointingCursor()
         }
         .padding(16)
         .background(
@@ -673,6 +708,7 @@ private struct PillButtonStyle: ButtonStyle {
                 Capsule(style: .continuous)
                     .fill(fill.opacity(configuration.isPressed ? 0.84 : 1))
             )
+            .pointingCursor()
     }
 }
 
@@ -688,6 +724,7 @@ private struct FilledActionStyle: ButtonStyle {
                     .fill(fill.opacity(configuration.isPressed ? 0.88 : 1))
             )
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
+            .pointingCursor()
     }
 }
 
@@ -879,39 +916,39 @@ private extension NotificationPermissionState {
     var title: String {
         switch self {
         case .authorized:
-            return "系统通知已开启"
+            return L10n.notificationAuthorizedTitle
         case .notDetermined:
-            return "还没有通知授权"
+            return L10n.notificationNotDeterminedTitle
         case .denied:
-            return "系统通知已关闭"
+            return L10n.notificationDeniedTitle
         case .unknown:
-            return "正在检测通知状态"
+            return L10n.notificationUnknownTitle
         }
     }
 
     var detail: String {
         switch self {
         case .authorized:
-            return "计时结束、恢复会话和执行睡眠操作时都会通过系统通知提醒你。"
+            return L10n.notificationAuthorizedDetail
         case .notDetermined:
-            return "建议开启通知，这样倒计时结束时就不会只停留在菜单栏里。"
+            return L10n.notificationNotDeterminedDetail
         case .denied:
-            return "请到系统设置 > 通知 > DivineSleep 中开启提醒，然后回来点“重新检测”。"
+            return L10n.notificationDeniedDetail
         case .unknown:
-            return "DivineSleep 正在读取当前通知权限，你也可以手动刷新一次。"
+            return L10n.notificationUnknownDetail
         }
     }
 
     var primaryActionTitle: String {
         switch self {
         case .authorized:
-            return "刷新状态"
+            return L10n.notificationActionRefresh
         case .notDetermined:
-            return "启用通知"
+            return L10n.notificationActionEnable
         case .denied:
-            return "重新检测"
+            return L10n.notificationActionRecheck
         case .unknown:
-            return "刷新状态"
+            return L10n.notificationActionRefresh
         }
     }
 
@@ -945,5 +982,17 @@ private extension NotificationPermissionState {
 extension MenuPalette: Equatable {
     static func == (lhs: MenuPalette, rhs: MenuPalette) -> Bool {
         lhs.primaryText == rhs.primaryText && lhs.secondaryText == rhs.secondaryText
+    }
+}
+
+extension View {
+    func pointingCursor() -> some View {
+        self.onHover { isHovered in
+            if isHovered {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
     }
 }

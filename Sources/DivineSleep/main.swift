@@ -55,6 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.popover.appearance = theme.appearance
             }
             .store(in: &cancellables)
+
+        LanguageManager.shared.$current
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateMenuBar()
+            }
+            .store(in: &cancellables)
     }
 
     @objc
@@ -85,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if sleepManager.isTimerRunning {
             menu.addItem(
-                withTitle: "取消当前计时",
+                withTitle: L10n.contextMenuCancelTimer,
                 action: #selector(cancelTimerFromMenu),
                 keyEquivalent: ""
             )
@@ -93,18 +100,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(
-            withTitle: popover.isShown ? "收起面板" : "展开面板",
+            withTitle: popover.isShown ? L10n.contextMenuCollapsePanel : L10n.contextMenuExpandPanel,
             action: #selector(togglePopoverFromMenu),
             keyEquivalent: ""
         )
         menu.addItem(
-            withTitle: "立即睡眠",
+            withTitle: L10n.contextMenuSleepNow,
             action: #selector(sleepNowFromMenu),
             keyEquivalent: ""
         )
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "退出 DivineSleep",
+            withTitle: L10n.contextMenuQuit,
             action: #selector(quit),
             keyEquivalent: "q"
         )
@@ -147,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         button.toolTip = sleepManager.isTimerRunning
             ? "\(sleepManager.mode.title)：\(sleepManager.formattedRemainingTime())"
-            : "DivineSleep"
+            : L10n.appTitle
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -12,18 +13,18 @@ enum TimerMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .pomodoro:
-            return "番茄时钟"
+            return L10n.pomodoroTitle
         case .sleepTimer:
-            return "睡眠倒计时"
+            return L10n.sleepTimerTitle
         }
     }
 
     var subtitle: String {
         switch self {
         case .pomodoro:
-            return "保持专注，结束后轻提醒"
+            return L10n.pomodoroSubtitle
         case .sleepTimer:
-            return "倒计时结束后让 Mac 进入睡眠"
+            return L10n.sleepTimerSubtitle
         }
     }
 
@@ -56,11 +57,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .light:
-            return "亮色"
+            return L10n.themeLight
         case .dark:
-            return "暗黑"
+            return L10n.themeDark
         case .system:
-            return "跟随系统"
+            return L10n.themeSystem
         }
     }
 
@@ -113,14 +114,14 @@ struct TimerPreset: Identifiable, Hashable {
 
     var unitText: String {
         if minutes >= 60, minutes % 60 == 0 {
-            return "小时"
+            return L10n.presetUnitHour
         }
 
-        return "分钟"
+        return L10n.presetUnitMinute
     }
 
     var detailText: String {
-        minutes == 1 ? "快速开始" : "单击开始"
+        minutes == 1 ? L10n.presetDetailQuickStart : L10n.presetDetailClickToStart
     }
 }
 
@@ -299,7 +300,7 @@ final class SleepManager: ObservableObject {
             persistSelectedMinutes(selectedMinutes, for: mode)
         }
     }
-    @Published var statusMessage = "点选一个时长卡片就会立即开始。"
+    @Published var statusMessage = L10n.statusMessageStartHint
     @Published var banner: FeedbackBanner?
     @Published var notificationPermission: NotificationPermissionState = .unknown
 
@@ -320,6 +321,7 @@ final class SleepManager: ObservableObject {
     private var screenLockObserver: NSObjectProtocol?
     private var screenUnlockObserver: NSObjectProtocol?
     private var displaySleepWorkItem: DispatchWorkItem?
+    private var cancellables = Set<AnyCancellable>()
 
     var presetItems: [TimerPreset] {
         switch mode {
@@ -337,13 +339,13 @@ final class SleepManager: ObservableObject {
     var sleepPreventionSummary: String {
         switch (batteryNeverSleep, powerNeverSleep) {
         case (true, true):
-            return "电池和电源模式都保持唤醒"
+            return L10n.sleepPreventionBoth
         case (true, false):
-            return "仅电池模式保持唤醒"
+            return L10n.sleepPreventionBatteryOnly
         case (false, true):
-            return "仅电源模式保持唤醒"
+            return L10n.sleepPreventionPowerOnly
         case (false, false):
-            return "防睡眠未启用"
+            return L10n.sleepPreventionOff
         }
     }
 
@@ -384,6 +386,14 @@ final class SleepManager: ObservableObject {
         }
         isRestoringState = false
         refreshNotificationPermission()
+
+        LanguageManager.shared.$current
+             .dropFirst()
+             .receive(on: RunLoop.main)
+             .sink { [weak self] _ in
+                 self?.refreshLocalizedStrings()
+             }
+             .store(in: &cancellables)
 
         if startMonitoring {
             startPowerMonitor()
@@ -429,7 +439,7 @@ final class SleepManager: ObservableObject {
         targetEndDate = environment.now().addingTimeInterval(Double(activeTimerTotalSeconds))
         remainingSeconds = remainingSecondsUntilTargetEndDate()
         isTimerRunning = true
-        statusMessage = "正在进行\(mode.title)。"
+        statusMessage = L10n.statusMessageRunning(mode: mode.title)
         clearNonCriticalBanner()
 
         beginTimerActivityIfNeeded()
@@ -444,28 +454,28 @@ final class SleepManager: ObservableObject {
         targetEndDate = nil
         isTimerRunning = false
         remainingSeconds = 0
-        statusMessage = "计时已取消。"
+        statusMessage = L10n.statusMessageCancelled
         clearActiveSession()
         endTimerActivityIfNeeded()
 
         if notify {
-            sendNotification(title: "DivineSleep", body: "当前倒计时已取消。")
+            sendNotification(title: L10n.notifTitleCancelled, body: L10n.notifBodyCancelled)
         }
     }
 
     func sleepNow(showNotification: Bool = true) {
         if showNotification {
-            sendNotification(title: "DivineSleep", body: "Mac 即将进入睡眠。")
+            sendNotification(title: L10n.notifTitleSleepNow, body: L10n.notifBodySleepNow)
         }
 
         do {
             try environment.sleepNow()
         } catch {
-            statusMessage = "无法让系统进入睡眠，请检查权限。"
+            statusMessage = L10n.statusMessageSleepFailed
             presentBanner(
                 level: .error,
-                title: "立即睡眠失败",
-                detail: "系统拒绝了睡眠请求。请确认当前环境允许执行 pmset，或从完整的 .app 包启动。"
+                title: L10n.bannerSleepFailedTitle,
+                detail: L10n.bannerSleepFailedDetail
             )
             print("Sleep command failed: \(error)")
         }
@@ -513,27 +523,39 @@ final class SleepManager: ObservableObject {
             case .authorized:
                 self.presentBanner(
                     level: .success,
-                    title: "通知已启用",
-                    detail: "计时结束和系统操作结果会通过通知提醒你。"
+                    title: L10n.bannerPermissionEnabledTitle,
+                    detail: L10n.bannerPermissionEnabledDetail
                 )
             case .denied:
                 self.presentBanner(
                     level: .warning,
-                    title: "通知未开启",
-                    detail: "请到系统设置 > 通知 > DivineSleep 中开启提醒，再点这里重新检测。"
+                    title: L10n.bannerPermissionDisabledTitle,
+                    detail: L10n.bannerPermissionDisabledDetail
                 )
             case .notDetermined:
                 self.presentBanner(
                     level: .warning,
-                    title: "授权窗口没有出现",
-                    detail: "这通常是因为当前运行的不是签名后的 .app，或系统没有把授权面板带到前台。请重新打开最新打包产物后再试。"
+                    title: L10n.bannerPermissionNoPromptTitle,
+                    detail: L10n.bannerPermissionNoPromptDetail
                 )
             case .unknown:
                 self.presentBanner(
                     level: .info,
-                    title: "通知状态未确认",
-                    detail: "你可以稍后再次尝试授权，或手动在系统设置里检查。"
+                    title: L10n.bannerPermissionUnknownTitle,
+                    detail: L10n.bannerPermissionUnknownDetail
                 )
+            }
+        }
+    }
+
+    private func refreshLocalizedStrings() {
+        if isTimerRunning {
+            statusMessage = L10n.statusMessageRunning(mode: mode.title)
+        } else {
+            if remainingSeconds > 0 && targetEndDate == nil {
+                statusMessage = L10n.statusMessageSessionRestored(mode: mode.title)
+            } else {
+                statusMessage = mode.subtitle
             }
         }
     }
@@ -575,11 +597,11 @@ final class SleepManager: ObservableObject {
 
         switch mode {
         case .pomodoro:
-            statusMessage = "专注阶段结束，记得活动一下。"
-            sendNotification(title: "专注结束", body: "你的番茄时钟已经完成。")
+            statusMessage = L10n.statusMessagePomodoroDone
+            sendNotification(title: L10n.notifTitlePomodoroDone, body: L10n.notifBodyPomodoroDone)
         case .sleepTimer:
-            statusMessage = "倒计时结束，准备进入睡眠。"
-            sendNotification(title: "睡眠倒计时结束", body: "DivineSleep 正在让 Mac 进入睡眠。")
+            statusMessage = L10n.statusMessageSleepTimerDone
+            sendNotification(title: L10n.notifTitleSleepTimerDone, body: L10n.notifBodySleepTimerDone)
             sleepNow(showNotification: false)
         }
     }
@@ -661,11 +683,11 @@ final class SleepManager: ObservableObject {
             do {
                 try environment.sleepAssertionController.start()
             } catch {
-                statusMessage = "无法开启防睡眠保护。"
+                statusMessage = L10n.statusMessagePreventionFailed
                 presentBanner(
                     level: .error,
-                    title: "防睡眠启动失败",
-                    detail: "DivineSleep 无法启动 caffeinate。请确认应用有权限调用系统命令。"
+                    title: L10n.bannerPreventionFailedTitle,
+                    detail: L10n.bannerPreventionFailedDetail
                 )
                 print("Failed to start sleep assertion: \(error)")
             }
@@ -696,11 +718,11 @@ final class SleepManager: ObservableObject {
 
         guard remaining > 0 else {
             clearActiveSession()
-            statusMessage = "上次未完成的计时已过期。"
+            statusMessage = L10n.statusMessageSessionExpired
             presentBanner(
                 level: .warning,
-                title: "上次计时未恢复",
-                detail: "检测到旧会话，但它已经过期，所以已自动清理。"
+                title: L10n.bannerSessionExpiredTitle,
+                detail: L10n.bannerSessionExpiredDetail
             )
             return false
         }
@@ -711,11 +733,11 @@ final class SleepManager: ObservableObject {
         remainingSeconds = remaining
         isTimerRunning = true
         self.selectedMinutes = selectedMinutes
-        statusMessage = "已恢复上次未完成的\(storedMode.title)。"
+        statusMessage = L10n.statusMessageSessionRestored(mode: storedMode.title)
         presentBanner(
             level: .info,
-            title: "已恢复上次计时",
-            detail: "继续之前未完成的\(storedMode.title)，你可以直接继续或取消。"
+            title: L10n.bannerSessionRestoredTitle,
+            detail: L10n.bannerSessionRestoredDetail(mode: storedMode.title)
         )
         beginTimerActivityIfNeeded()
         scheduleTimerIfNeeded()
@@ -768,14 +790,14 @@ final class SleepManager: ObservableObject {
         case .notDetermined:
             presentBanner(
                 level: .info,
-                title: "建议启用系统通知",
-                detail: "这样在计时结束或执行睡眠操作时，你能立即收到提醒。"
+                title: L10n.bannerSuggestionTitle,
+                detail: L10n.bannerSuggestionDetail
             )
         case .denied:
             presentBanner(
                 level: .warning,
-                title: "通知已关闭",
-                detail: "请到系统设置 > 通知 > DivineSleep 中开启提醒，避免错过完成提示。"
+                title: L10n.bannerDisabledWarningTitle,
+                detail: L10n.bannerDisabledWarningDetail
             )
         case .unknown:
             refreshNotificationPermission()
@@ -819,11 +841,7 @@ final class SleepManager: ObservableObject {
     }
 
     private func format(minutes: Int) -> String {
-        if minutes >= 60, minutes % 60 == 0 {
-            return "\(minutes / 60) 小时"
-        }
-
-        return "\(minutes) 分钟"
+        return L10n.formatDuration(minutes: minutes)
     }
 
     private static func restoreTimerMode(from defaults: UserDefaults) -> TimerMode {
